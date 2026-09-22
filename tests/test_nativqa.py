@@ -28,7 +28,7 @@ class TestNativQA(unittest.TestCase):
                     "search_parameters": {"q": "What can I visit in Doha?"},
                     "related_questions": [{
                         "question": "Which museum can I visit?",
-                        "snippet": "Museum of Islamic Art",
+                        "snippet": "Museum of Islamic Art — متحف الفن الإسلامي",
                         "link": "https://example.org/museum",
                     }],
                     "images_results": [{"original": "https://example.org/museum.jpg"}],
@@ -55,7 +55,7 @@ class TestNativQA(unittest.TestCase):
                     with (result / "dataset/seed.tsv").open(encoding="utf-8", newline="") as handle:
                         rows = list(csv.DictReader(handle, delimiter="\t"))
                     self.assertEqual(len(rows), 1)
-                    self.assertEqual(rows[0]["answer"], "Museum of Islamic Art")
+                    self.assertEqual(rows[0]["answer"], "Museum of Islamic Art — متحف الفن الإسلامي")
                 else:
                     rows = json.loads((result / "dataset/seed.json").read_text())
                     self.assertEqual(len(rows), 1)

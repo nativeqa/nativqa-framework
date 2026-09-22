@@ -42,6 +42,7 @@ This project follows a Keep a Changelog style and uses Semantic Versioning (`MAJ
 ### Fixed
 
 - Preserve absolute output directory paths.
+- Write CSV/TSV files without extra blank rows on Windows and read multilingual data as UTF-8.
 - Close completed-query files before subsequent processing.
 - Replace the core test's incomplete API call with mocked, key-free searches.
 

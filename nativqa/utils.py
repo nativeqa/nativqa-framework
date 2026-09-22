@@ -11,7 +11,7 @@ def read_seed_queries(fpath):
     delim = ',' if fpath.endswith('.csv') else '\t'
     data = []
     unique = []
-    with open(fpath, 'r', encoding='utf-8') as f:
+    with open(fpath, 'r', encoding='utf-8', newline='') as f:
         reader = csv.reader(f, delimiter=delim)
         next(reader)
         for row in reader:
@@ -56,7 +56,7 @@ def read_failed_data(filepath):
 
 def read_summary_data(filepath):
     data = []
-    with open(filepath) as f:
+    with open(filepath, encoding='utf-8', newline='') as f:
         lines = f.read().strip().split("\n")
     # print(lines)
     if len(lines) == 1 and lines[0] == '':
@@ -69,7 +69,7 @@ def read_summary_data(filepath):
 def read_completed_data(filepath):
     delim = ',' if filepath.endswith('.csv') else '\t'
     data = []
-    with open(filepath) as f:
+    with open(filepath, encoding='utf-8', newline='') as f:
         reader = csv.reader(f, delimiter=delim)
         next(reader)
         for row in reader:
@@ -77,11 +77,12 @@ def read_completed_data(filepath):
     return data
 
 def read_txt_data(filepath):
-    queries = open(filepath, 'r', encoding='utf-8').read().strip().split("\n")
+    with open(filepath, 'r', encoding='utf-8') as f:
+        queries = f.read().strip().split("\n")
     return queries
 
 def read_json_data(fpath):
-    with open(fpath) as f:
+    with open(fpath, encoding='utf-8') as f:
         data = json.load(f)
     return data
 
@@ -96,7 +97,7 @@ def write_file(filepath, out_data):
 
 def write_csv_file(out_file, rqa_data):
     delim = ',' if out_file.endswith('.csv') else '\t'
-    with open(out_file,'w', encoding='utf-8') as f:
+    with open(out_file, 'w', encoding='utf-8', newline='') as f:
         writer = csv.writer(f, delimiter=delim)
         for row in rqa_data:
             writer.writerow(row)
