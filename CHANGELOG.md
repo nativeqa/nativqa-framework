@@ -8,6 +8,9 @@ This project follows a Keep a Changelog style and uses Semantic Versioning (`MAJ
 
 ### Added
 
+- Publish the documented visual validation, image/video QA generation, annotation
+  summary, and manual review scripts with setup guides and offline generator tests.
+
 - Lightweight static demo page in `demo/` for:
   - paste seed queries
   - generate JSONL preview

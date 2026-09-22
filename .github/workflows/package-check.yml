@@ -68,3 +68,21 @@ jobs:
         with:
           name: python-distributions
           path: dist/*
+
+  utilities:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install repository utility dependencies
+        run: python -m pip install -r requirements-video.txt
+      - name: Test visual and video QA utilities without API calls
+        run: |
+          python -m unittest tests.test_generate_visually_grounded_qa tests.test_generate_video_grounded_qa_gemini
+          python scripts/validate_visual_qa_images.py --help
+          python scripts/generate_visually_grounded_qa.py --help
+          python scripts/generate_video_grounded_qa_gemini.py --help
+          python scripts/summarize_visual_qa_annotations.py --help
+          python scripts/review_visual_qa_annotations.py --help

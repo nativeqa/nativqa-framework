@@ -1,3 +1,5 @@
 google-search-results==2.4.2
 python-dotenv==1.0.1
 tqdm==4.66.6
+requests>=2.31,<3
+gradio>=5,<7

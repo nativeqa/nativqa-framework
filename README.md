@@ -208,11 +208,13 @@ require additional dependencies and newer Python versions; see their documentati
 - [scripts/filter_near_duplicates_flann.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/filter_near_duplicates_flann.py): filter near-duplicate images
 - [scripts/check_domain_reliability.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/check_domain_reliability.py): retain answers from reliable domains
 - [scripts/GPT_4o_labeling.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/GPT_4o_labeling.py): annotate datasets with LLM-based labels
-- `scripts/validate_visual_qa_images.py`: validate image relevance and visual grounding with Azure OpenAI
-- `scripts/generate_visually_grounded_qa.py`: skip text-driven images, then generate and verify short/long image-only QA pairs
-- `scripts/generate_video_grounded_qa_gemini.py`: generate short/long video-grounded QA pairs with Gemini 3.5 Flash
-- `scripts/summarize_visual_qa_annotations.py`: report LLM and manual Visual QA annotation statistics
-- `scripts/review_visual_qa_annotations.py`: manually accept or reject images in a Gradio app
+- [scripts/validate_visual_qa_images.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/validate_visual_qa_images.py): validate image relevance and visual grounding with Azure OpenAI
+- [scripts/generate_visually_grounded_qa.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/generate_visually_grounded_qa.py): skip text-driven images, then generate and verify short/long image-only QA pairs
+- [scripts/generate_video_grounded_qa_gemini.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/generate_video_grounded_qa_gemini.py): generate short/long video-grounded QA pairs with Gemini 3.5 Flash
+- [scripts/summarize_visual_qa_annotations.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/summarize_visual_qa_annotations.py): report LLM and manual Visual QA annotation statistics
+- [scripts/review_visual_qa_annotations.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/review_visual_qa_annotations.py): manually accept or reject images in a Gradio app
+
+For setup and examples, see the [visual QA guide](https://github.com/nativeqa/nativqa-framework/blob/main/docs/visual_qa_image_validation.md) and [video QA guide](https://github.com/nativeqa/nativqa-framework/blob/main/docs/video_grounded_qa.md).
 
 ## Query Collection
 
