@@ -42,7 +42,7 @@ def extract_completed_img_vid_queries(output_dir):
         for file in files:
             file_path = os.path.join(root, file)
             if file_path.endswith("original_response.json"):
-                with open(file_path) as f:
+                with open(file_path, encoding='utf-8') as f:
                     data = json.load(f)
                 for result in data:
                     if 'search_parameters' in result:
