@@ -1,17 +1,20 @@
-# NativQA Framework
+# NativQA Framework: Multilingual QA Dataset Collection for LLM Evaluation
 
 [![PyPI version](https://img.shields.io/pypi/v/nativqa-framework)](https://pypi.org/project/nativqa-framework/)
+[![Total PyPI downloads](https://img.shields.io/pepy/dt/nativqa-framework)](https://www.pepy.tech/projects/nativqa-framework)
 [![Python versions](https://img.shields.io/pypi/pyversions/nativqa-framework)](https://pypi.org/project/nativqa-framework/)
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
-[![Website](https://img.shields.io/badge/website-nativqa.gitlab.io-blue)](https://nativqa.gitlab.io/)
+[![Website](https://img.shields.io/badge/website-nativeqa.github.io-blue)](https://nativeqa.github.io/)
+
+*Download counts are provided by Pepy and include PyPI and known mirrors; they do not represent unique users.*
 
 **NativQA Framework** is an open-source toolkit for collecting multilingual, culturally aligned, search-grounded question answering datasets. It helps researchers and practitioners build **natural query**, **multilingual QA**, **region-aware evaluation**, and **visual question answering (VQA)** resources from real search results across different countries, languages, and domains.
 
 NativQA is designed for teams working on **LLM evaluation**, **benchmark construction**, **fine-tuning data collection**, **culturally grounded QA**, and **location-specific search analysis**. Starting from seed queries, it expands through related searches and search result structures to produce datasets that reflect everyday information needs in local contexts.
 
-More details are available at [https://nativqa.gitlab.io/](https://nativqa.gitlab.io/).
+More details are available at [https://nativeqa.github.io/](https://nativeqa.github.io/).
 
-![NativQA framework, demonstrating the data collection and annotation process.](https://gitlab.com/nativqa/nativqa-framework/-/raw/main/nativqa_framework.png)
+![NativQA framework, demonstrating the data collection and annotation process.](https://raw.githubusercontent.com/nativeqa/nativqa-framework/main/nativqa_framework.png)
 
 Here is a quick overview video:
 > [![NativQA Framework Overview](https://markdown-videos-api.jorgenkh.no/youtube/gTgpeYqWm9s)](https://youtu.be/gTgpeYqWm9s)
@@ -43,11 +46,13 @@ Here is a quick overview video:
 
 ## Quick Start
 
+The pip package requires Python 3.9 or newer and a SerpAPI key for search requests.
+
 ### Option 1: Install from source
 
 1. Clone the repository:
    ```bash
-   git clone https://gitlab.com/nativqa/nativqa-framework.git
+   git clone https://github.com/nativeqa/nativqa-framework/
    cd nativqa-framework
    ```
 2. Install the requirements:
@@ -72,6 +77,9 @@ Here is a quick overview video:
    ```
 
 ### Option 2: Install from PyPI
+
+This installs the core search package and the `nativqa` command. Check the installed
+version with `nativqa --version` (available from version 0.1.3).
 
 1. Install the package:
    ```bash
@@ -190,13 +198,21 @@ Inside that directory:
 
 ## Included Utilities
 
-The repository includes helper scripts for common dataset-building tasks:
+The repository includes helper scripts for common dataset-building tasks. These
+scripts, templates, domain annotations, and demo apps are not installed by
+`pip install nativqa-framework`; clone the repository to use them. Some utilities
+require additional dependencies and newer Python versions; see their documentation.
 
-- [scripts/template2seeds.py](https://gitlab.com/nativqa/nativqa-framework/-/blob/main/scripts/template2seeds.py): generate seed queries from a template file
-- [scripts/download_images.py](https://gitlab.com/nativqa/nativqa-framework/-/blob/main/scripts/download_images.py): download images from an image-search dataset
-- [scripts/filter_near_duplicates_flann.py](https://gitlab.com/nativqa/nativqa-framework/-/blob/main/scripts/filter_near_duplicates_flann.py): filter near-duplicate images
-- [scripts/check_domain_reliability.py](https://gitlab.com/nativqa/nativqa-framework/-/blob/main/scripts/check_domain_reliability.py): retain answers from reliable domains
-- [scripts/GPT_4o_labeling.py](https://gitlab.com/nativqa/nativqa-framework/-/blob/main/scripts/GPT_4o_labeling.py): annotate datasets with LLM-based labels
+- [scripts/template2seeds.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/template2seeds.py): generate seed queries from a template file
+- [scripts/download_images.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/download_images.py): download images from an image-search dataset
+- [scripts/filter_near_duplicates_flann.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/filter_near_duplicates_flann.py): filter near-duplicate images
+- [scripts/check_domain_reliability.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/check_domain_reliability.py): retain answers from reliable domains
+- [scripts/GPT_4o_labeling.py](https://github.com/nativeqa/nativqa-framework/blob/main/scripts/GPT_4o_labeling.py): annotate datasets with LLM-based labels
+- `scripts/validate_visual_qa_images.py`: validate image relevance and visual grounding with Azure OpenAI
+- `scripts/generate_visually_grounded_qa.py`: skip text-driven images, then generate and verify short/long image-only QA pairs
+- `scripts/generate_video_grounded_qa_gemini.py`: generate short/long video-grounded QA pairs with Gemini 3.5 Flash
+- `scripts/summarize_visual_qa_annotations.py`: report LLM and manual Visual QA annotation statistics
+- `scripts/review_visual_qa_annotations.py`: manually accept or reject images in a Gradio app
 
 ## Query Collection
 
@@ -211,13 +227,13 @@ python3 scripts/template2seeds.py \
 
 ### Seed query collection app
 
-The repository also includes a lightweight Flask-based seed collection app in [seed_query_collector/app.py](https://gitlab.com/nativqa/nativqa-framework/-/blob/main/seed_query_collector/app.py) for gathering user-written queries.
+The repository also includes a lightweight Flask-based seed collection app in [seed_query_collector/app.py](https://github.com/nativeqa/nativqa-framework/blob/main/seed_query_collector/app.py) for gathering user-written queries.
 
 ## QA Validation
 
 ### Domain Reliability Check (DRC)
 
-Manually verified domain labels are stored in [domain/annotated_domains.csv](https://gitlab.com/nativqa/nativqa-framework/-/blob/main/domain/annotated_domains.csv).
+Manually verified domain labels are stored in [domain/annotated_domains.csv](https://github.com/nativeqa/nativqa-framework/blob/main/domain/annotated_domains.csv).
 
 To filter answers by source reliability:
 
@@ -238,6 +254,7 @@ python3 scripts/GPT_4o_labeling.py \
 ```
 
 
+
 ## License
 
 NativQA Framework is licensed under the [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/).
@@ -253,7 +270,7 @@ Please cite our papers when referring to this framework:
   title={NativQA Framework: A Framework for Collecting Multilingual Culturally-Aligned Natural Queries},
   author={Alam, Firoj and Hasan, Md Arid and Laskar, Sahinur Rahman and Kutlu, Mucahid and Chowdhury, Shammur Absar},
   journal={arXiv},
-  year={2024}
+  year={2025}
 }
 
 @inproceedings{hasan-etal-2025-nativqa,
@@ -276,6 +293,6 @@ Please cite our papers when referring to this framework:
     doi = "10.18653/v1/2025.findings-acl.770",
     pages = "14886--14909",
     ISBN = "979-8-89176-256-5",
-    abstract = "Natural Question Answering (QA) datasets play a crucial role in evaluating the capabilities of large language models (LLMs), ensuring their effectiveness in real-world applications. Despite the numerous QA datasets that have been developed and some work done in parallel, there is a notable lack of a framework and large-scale region-specific datasets queried by native users in their own languages. This gap hinders effective benchmarking and the development of fine-tuned models for regional and cultural specificities. In this study, we propose a scalable, language-independent framework, NativQA, to seamlessly construct culturally and regionally aligned QA datasets in native languages for LLM evaluation and tuning. We demonstrate the efficacy of the proposed framework by designing a multilingual natural QA dataset, MultiNativQA, consisting of approximately {\textasciitilde}64K manually annotated QA pairs in seven languages, ranging from high- to extremely low-resource, based on queries from native speakers from 9 regions covering 18 topics. We benchmark both open- and closed-source LLMs using the MultiNativQA dataset. The dataset and related experimental scripts are publicly available for the community at: https://huggingface.co/datasets/QCRI/MultiNativQAand https://gitlab.com/nativqa/multinativqa."
+    abstract = "Natural Question Answering (QA) datasets play a crucial role in evaluating the capabilities of large language models (LLMs), ensuring their effectiveness in real-world applications. Despite the numerous QA datasets that have been developed and some work done in parallel, there is a notable lack of a framework and large-scale region-specific datasets queried by native users in their own languages. This gap hinders effective benchmarking and the development of fine-tuned models for regional and cultural specificities. In this study, we propose a scalable, language-independent framework, NativQA, to seamlessly construct culturally and regionally aligned QA datasets in native languages for LLM evaluation and tuning. We demonstrate the efficacy of the proposed framework by designing a multilingual natural QA dataset, MultiNativQA, consisting of approximately {\textasciitilde}64K manually annotated QA pairs in seven languages, ranging from high- to extremely low-resource, based on queries from native speakers from 9 regions covering 18 topics. We benchmark both open- and closed-source LLMs using the MultiNativQA dataset. The dataset and related experimental scripts are publicly available for the community at: https://huggingface.co/datasets/QCRI/MultiNativQA and https://gitlab.com/nativqa/multinativqa."
 }
 ```

@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from urllib.parse import parse_qs
 from serpapi import GoogleSearch
 from shutil import copyfile
+from . import __version__
 
 from .utils import (read_seed_queries,
                     ensure_directory,
@@ -398,7 +399,7 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
     if result_dir is None:
         result_dir = f'./results/{search_type}/'+ folder_name
     else:
-        result_dir = f'./{result_dir}/{search_type}/'+ folder_name
+        result_dir = os.path.join(result_dir, search_type, folder_name)
     ensure_directory(result_dir)
 
     working_dir = os.path.join(result_dir, 'iteration_1')
@@ -600,7 +601,7 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
         write_file(duplicate_file, duplicate)
 
 def main():
-    parser = optparse.OptionParser()
+    parser = optparse.OptionParser(version=f'%prog {__version__}')
     parser.add_option('-s', '--engine', action="store", dest="engine", default=None, type="string",
                       help='Search engine (google, yahoo, or bing)')
     parser.add_option('-t', '--search_type', action="store", dest="search_type", default="text", type="string",
@@ -635,4 +636,3 @@ def main():
 
 if __name__=="__main__":
     main()
-

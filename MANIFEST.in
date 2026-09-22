@@ -1,2 +1,6 @@
 include README.md
 include licenses_by-nc-sa_4.0_legalcode.txt
+include CHANGELOG.md
+include PACKAGING.md
+prune tests
+include tests/test_nativqa.py

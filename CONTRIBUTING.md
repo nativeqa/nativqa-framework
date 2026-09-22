@@ -34,7 +34,13 @@ python3 -m nativqa \
 
 ## Running Tests
 
-Run all tests:
+Run the offline core package tests (no API key required):
+
+```bash
+python3 -m unittest tests.test_nativqa
+```
+
+Run all repository tests, including optional utility tests:
 
 ```bash
 python3 -m unittest discover -s tests
@@ -82,3 +88,5 @@ Please include:
 ## Release Notes and Changelog
 
 User-visible changes should be reflected in `CHANGELOG.md` under `Unreleased`.
+
+See [PACKAGING.md](PACKAGING.md) for distribution validation and release preparation.

@@ -102,6 +102,6 @@ def write_csv_file(out_file, rqa_data):
             writer.writerow(row)
 
 def write_txt_file(filepath, data):
-    f = open(filepath, 'w', encoding='utf-8')
-    for query in data:
-        f.write(query + "\n")
+    with open(filepath, 'w', encoding='utf-8') as f:
+        for query in data:
+            f.write(query + "\n")
