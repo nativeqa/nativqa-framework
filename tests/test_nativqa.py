@@ -14,6 +14,7 @@ from unittest.mock import Mock, patch
 from nativqa import __version__
 from nativqa.nativqa_framework import run_nativqa, scrape
 from nativqa.qa_extraction import extract_ai_overview_answer, resolve_ai_overview_references
+from nativqa.related_questions import expand_related_questions
 
 
 class TestNativQA(unittest.TestCase):
@@ -75,6 +76,28 @@ class TestNativQA(unittest.TestCase):
                 )
                 expected = __version__ if flag == "--version" else "--input_file"
                 self.assertIn(expected, result.stdout)
+
+    def test_real_serpapi_client_supports_expansion_and_overview_timeouts(self):
+        responses = [
+            {"search_parameters": {"q": "seed", "engine": "google"}, "related_questions": [
+                {"question": "Initial?", "snippet": "Initial answer", "link": "https://example.org/initial",
+                 "next_page_token": "expand"},
+            ]},
+            {"related_questions": [{"question": "Expanded?", "type": "ai_overview", "page_token": "overview"}]},
+            {"ai_overview": overview_answer("Expanded answer")},
+        ]
+        summary, failures = io.StringIO(), io.StringIO()
+        with patch.dict(os.environ, {"API_KEY": "offline-test-key"}), \
+             patch("serpapi.serp_api_client.requests.get",
+                   side_effect=[Mock(text=json.dumps(response)) for response in responses]) as http:
+            scrape("google", [["travel", "seed"]], "Doha, Qatar", "qa", summary, failures,
+                   qa_extraction="hybrid", ai_overview_max_requests=1, related_questions_max_requests=1)
+        self.assertEqual(failures.getvalue(), "")
+        self.assertEqual([call.args[1]["engine"] for call in http.call_args_list],
+                         ["google", "google_related_questions", "google_ai_overview"])
+        self.assertTrue(all(call.kwargs["timeout"] == 30 for call in http.call_args_list))
+        response = json.loads(summary.getvalue())
+        self.assertEqual(response["related_questions"][1]["nativqa_ai_overview"]["status"], "fetched")
 
 
 def overview_answer(text="The museum is in Doha."):
@@ -187,7 +210,8 @@ class TestAIOverviewExtraction(unittest.TestCase):
         count = resolve_ai_overview_references(response, factory, "offline-test-key", max_requests=1)
         self.assertEqual(count, 1)
         factory.assert_called_once_with({"engine": "google_ai_overview", "page_token": "same-token",
-                                         "api_key": "offline-test-key"}, timeout=30)
+                                         "api_key": "offline-test-key"})
+        self.assertEqual(factory.return_value.timeout, 30)
         questions = response["related_questions"]
         self.assertEqual(questions[0]["page_token"], "same-token")
         self.assertEqual(questions[0]["nativqa_ai_overview"]["response"]["search_metadata"]["id"], "overview-id")
@@ -233,7 +257,7 @@ class TestAIOverviewExtraction(unittest.TestCase):
 
 class TestQAExtractionPipeline(unittest.TestCase):
     def run_pipeline(self, root, response, mode="legacy", engine="google", extra_responses=(), max_requests=5,
-                     n_iter=1):
+                     n_iter=1, related_requests=0, search_type="text"):
         seed = root / "seed.tsv"
         seed.write_text("topic\tquery\ntravel\tseed query\n", encoding="utf-8")
         env = root / "api.env"
@@ -242,10 +266,11 @@ class TestQAExtractionPipeline(unittest.TestCase):
             "nativqa.nativqa_framework.GoogleSearch"
         ) as search:
             search.return_value.get_dict.side_effect = copy.deepcopy([response, *extra_responses])
-            run_nativqa(engine=engine, search_type="text", input_file=str(seed), gl="qa",
+            run_nativqa(engine=engine, search_type=search_type, input_file=str(seed), gl="qa",
                         location="Doha, Qatar", multiple_country=None, result_dir=str(root / "output"),
                         env=str(env), n_iter=n_iter, qa_extraction=mode,
-                        ai_overview_max_requests=max_requests)
+                        ai_overview_max_requests=max_requests,
+                        related_questions_max_requests=related_requests)
         result = root / "output/text/seed"
         with (result / "dataset/seed.tsv").open(encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle, delimiter="\t"))
@@ -393,6 +418,211 @@ class TestQAExtractionPipeline(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             with self.assertRaisesRegex(ValueError, "use legacy"):
                 self.run_pipeline(Path(temporary), self.mixed_response(), mode="hybrid", engine="bing")
+
+    def test_expansion_exports_classic_answers_and_resumes_without_api_calls(self):
+        initial = {"search_parameters": {"q": "seed query"}, "related_questions": [
+            {"question": "Initial?", "snippet": "Initial answer", "link": "https://example.org/initial",
+             "next_page_token": "expand-initial"},
+        ]}
+        expanded = {"search_metadata": {"id": "expansion-id"}, "related_questions": [
+            {"question": "Expanded?", "list": ["One", "Two"], "link": "https://example.org/expanded"},
+        ]}
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result, rows, search = self.run_pipeline(root, initial, extra_responses=[expanded], related_requests=2)
+            self.assertEqual(search.call_count, 2)
+            self.assertEqual(search.call_args_list[1].args[0]["engine"], "google_related_questions")
+            self.assertEqual(search.call_args_list[1].args[0]["next_page_token"], "expand-initial")
+            self.assertTrue(search.call_args_list[0].args[0]["no_cache"])
+            self.assertEqual({row["question"]: row["answer"] for row in rows},
+                             {"Initial?": "Initial answer", "Expanded?": "One\nTwo"})
+            self.assertTrue(all(row["input_query"] == "seed query" for row in rows))
+            raw = json.loads((result / "iteration_1/output/original_response.json").read_text())[0]
+            self.assertEqual(raw["nativqa_related_questions"]["requests_made"], 1)
+            self.assertEqual(raw["related_questions"][1]["nativqa_related_question"]["parent_question"], "Initial?")
+            self.assertNotIn("data_id", raw["nativqa_related_questions"]["requests"][0]["response"]["related_questions"][0])
+            _, resumed_rows, resumed_search = self.run_pipeline(root, initial, related_requests=2)
+            resumed_search.assert_not_called()
+            self.assertEqual(rows, resumed_rows)
+            with self.assertRaisesRegex(ValueError, "new --output_dir"):
+                self.run_pipeline(root, initial, related_requests=3)
+
+    def test_expanded_overviews_share_one_seed_budget_and_resolve_between_batches(self):
+        initial = {"search_parameters": {"q": "seed query"}, "related_questions": [
+            {"question": "Initial AI?", "type": "ai_overview", "page_token": "ai-1",
+             "next_page_token": "expand-1"},
+        ]}
+        expanded = {"related_questions": [
+            {"question": "Shared AI?", "type": "ai_overview", "page_token": "ai-1"},
+            {"question": "New AI?", "type": "ai_overview", "page_token": "ai-2",
+             "next_page_token": "expand-2"},
+            {"question": "Classic?", "snippet": "Classic answer", "link": "https://example.org/classic"},
+        ]}
+        final = {"related_questions": [
+            {"question": "Limited AI?", "type": "ai_overview", "page_token": "ai-3"},
+            {"question": "Embedded AI?", "type": "ai_overview", **overview_answer("Embedded answer")},
+        ]}
+        for mode in ("hybrid", "ai_overview"):
+            with self.subTest(mode=mode), TemporaryDirectory() as temporary:
+                result, rows, search = self.run_pipeline(Path(temporary), initial, mode=mode,
+                    related_requests=2, max_requests=2, extra_responses=[
+                        {"ai_overview": overview_answer("Initial answer")}, expanded,
+                        {"ai_overview": overview_answer("New answer")}, final,
+                    ])
+                self.assertEqual([call.args[0]["engine"] for call in search.call_args_list],
+                                 ["google", "google_ai_overview", "google_related_questions",
+                                  "google_ai_overview", "google_related_questions"])
+                answers = {row["question"]: row["answer"] for row in rows}
+                self.assertEqual(answers["Shared AI?"], "Initial answer")
+                self.assertEqual(answers["New AI?"], "New answer")
+                self.assertEqual(answers["Embedded AI?"], "Embedded answer")
+                self.assertNotIn("Limited AI?", answers)
+                self.assertEqual("Classic?" in answers, mode == "hybrid")
+                candidates = [json.loads(line) for line in
+                    (result / "dataset/seed.ai_overview_candidates.jsonl").read_text().splitlines()]
+                candidate = next(row for row in candidates if row["question"] == "New AI?")
+                self.assertEqual(candidate["related_question_expansion"]["parent_question"], "Initial AI?")
+
+    def test_expansion_failure_preserves_initial_qa(self):
+        response = self.mixed_response()
+        response["related_questions"][0]["next_page_token"] = "expired"
+        with TemporaryDirectory() as temporary:
+            result, rows, _ = self.run_pipeline(Path(temporary), response, related_requests=1,
+                                                extra_responses=[{"error": "Expired token"}])
+            self.assertEqual(rows[0]["answer"], "Classic answer")
+            self.assertEqual((result / "iteration_1/output/failed.jsonl").read_text(), "")
+            raw = json.loads((result / "iteration_1/output/original_response.json").read_text())[0]
+            self.assertEqual(raw["nativqa_related_questions"]["requests"][0]["status"], "error")
+
+    def test_expansion_rejects_unsupported_engines_and_search_types_before_requests(self):
+        for engine, search_type in (("bing", "text"), ("yahoo", "text"),
+                                    ("google", "image"), ("google", "video")):
+            with self.subTest(engine=engine, search_type=search_type), TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                with patch("nativqa.nativqa_framework.GoogleSearch") as search, \
+                     self.assertRaisesRegex(ValueError, "requires Google text search"):
+                    self.run_pipeline(root, self.mixed_response(), engine=engine,
+                                      search_type=search_type, related_requests=1)
+                search.assert_not_called()
+                self.assertFalse((root / "output").exists())
+        with self.assertRaisesRegex(ValueError, "requires Google text search"):
+            scrape("bing", [], "Doha, Qatar", "qa", io.StringIO(), io.StringIO(),
+                   related_questions_max_requests=1)
+
+    def test_expansion_cannot_reuse_old_unexpanded_cache(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result, _, _ = self.run_pipeline(root, self.mixed_response())
+            config_path = result / "qa_extraction_config.json"
+            config = json.loads(config_path.read_text())
+            config.pop("related_questions_max_requests")
+            config_path.write_text(json.dumps(config))
+            with self.assertRaisesRegex(ValueError, "new --output_dir"):
+                self.run_pipeline(root, self.mixed_response(), related_requests=1)
+            _, _, search = self.run_pipeline(root, self.mixed_response())
+            search.assert_not_called()
+
+    def test_each_seed_finishes_expansion_before_the_next_seed(self):
+        calls = []
+        def make_search(params, **kwargs):
+            calls.append(dict(params))
+            response = ({"search_parameters": {"q": params["q"]}, "related_questions": [
+                {"question": "Related?", "next_page_token": "shared-across-seeds"},
+            ]} if params["engine"] == "google" else {"related_questions": []})
+            return Mock(get_dict=Mock(return_value=response))
+        with patch("nativqa.nativqa_framework.GoogleSearch", side_effect=make_search):
+            summary, failures = io.StringIO(), io.StringIO()
+            scrape("google", [["travel", "first"], ["travel", "second"]], "Doha, Qatar", "qa",
+                   summary, failures, related_questions_max_requests=1)
+        self.assertEqual([call["engine"] for call in calls],
+                         ["google", "google_related_questions", "google", "google_related_questions"])
+        self.assertEqual(failures.getvalue(), "")
+
+
+class TestRelatedQuestionsExpansion(unittest.TestCase):
+    def test_disabled_and_absent_tokens_make_no_requests(self):
+        response = {"related_questions": [{"question": "Question?", "next_page_token": "token"}]}
+        original = copy.deepcopy(response)
+        search = Mock()
+        self.assertEqual(expand_related_questions(response, search, "key", max_requests=0), 0)
+        self.assertEqual(response, original)
+        for value in (None, [], [None, {}, {"question": ""}], [{"question": "No token?"}]):
+            with self.subTest(value=value):
+                self.assertEqual(expand_related_questions({"related_questions": value}, search, "key", 3), 0)
+        search.assert_not_called()
+        with self.assertRaisesRegex(ValueError, "nonnegative"):
+            expand_related_questions(response, search, "key", -1)
+
+    def test_breadth_first_budget_deduplicates_tokens_cycles_and_answers(self):
+        initial = {"question": "Initial?", "snippet": "Initial answer", "link": "https://example.org/1",
+                   "next_page_token": "first"}
+        response = {"related_questions": [initial, {"question": "Other?", "next_page_token": "second"}]}
+        new = {"question": "New?", "snippet": "New answer", "link": "https://example.org/2",
+               "next_page_token": "third"}
+        search = Mock()
+        search.return_value.get_dict.side_effect = [
+            {"related_questions": [copy.deepcopy(initial), new]},
+            {"related_questions": [copy.deepcopy(new),
+                dict(new, snippet="Alternative answer", next_page_token="fourth")]},
+        ]
+        self.assertEqual(expand_related_questions(response, search, "key", 2), 2)
+        self.assertEqual([call.args[0]["next_page_token"] for call in search.call_args_list], ["first", "second"])
+        self.assertEqual([entry.get("snippet") for entry in response["related_questions"]],
+                         ["Initial answer", None, "New answer", "Alternative answer"])
+        state = response["nativqa_related_questions"]
+        self.assertEqual(state["added_questions"], 2)
+        self.assertEqual(state["pending_tokens"], 2)
+        self.assertTrue(state["request_limit_reached"])
+        self.assertEqual(state["requests"][0]["response"]["related_questions"][1], new)
+
+    def test_link_tokens_are_engine_specific_and_use_fixed_client_parameters(self):
+        links = [
+            "https://serpapi.com/search.json?engine=google_related_questions&next_page_token=valid%2Btoken",
+            "https://attacker.example/search?engine=google_related_questions&next_page_token=wrong",
+            "https://serpapi.com/search.json?engine=google_ai_overview&page_token=wrong",
+            "http://serpapi.com/search?engine=google_related_questions&next_page_token=wrong",
+            "https://[bad-host",
+        ]
+        response = {"related_questions": [{"question": f"Question {index}?", "serpapi_link": link}
+                                          for index, link in enumerate(links)]}
+        search = Mock()
+        search.return_value.get_dict.return_value = {"related_questions": []}
+        expand_related_questions(response, search, "key", 5)
+        search.assert_called_once_with({'engine': 'google_related_questions',
+                                       'next_page_token': 'valid+token', 'api_key': 'key'})
+        self.assertEqual(search.return_value.timeout, 30)
+
+    def test_failures_empty_and_malformed_batches_preserve_other_branches_and_redact_key(self):
+        response = {"related_questions": [{"question": f"Question {i}?", "next_page_token": str(i)}
+                                          for i in range(5)]}
+        search = Mock()
+        search.return_value.get_dict.side_effect = [
+            {"error": "Expired?api_key=secret-key"}, RuntimeError("Network?api_key=secret-key"),
+            {"related_questions": None}, {"related_questions": [None, {}, {"question": 123}]},
+            {"search_metadata": {"id": "success"}, "api_key": "secret-key", "related_questions": [
+                {"question": "Valid?", "snippet": "Valid answer", "link": "https://example.org/answer"},
+            ]},
+        ]
+        expand_related_questions(response, search, "secret-key", 5)
+        state = response["nativqa_related_questions"]
+        self.assertEqual([request["status"] for request in state["requests"]],
+                         ["error", "error", "empty", "empty", "fetched"])
+        self.assertEqual(response["related_questions"][-1]["snippet"], "Valid answer")
+        self.assertNotIn("secret-key", json.dumps(response))
+
+    def test_recursive_tokens_are_followed_with_parent_provenance(self):
+        response = {"related_questions": [{"question": "Root?", "next_page_token": "root"}]}
+        search = Mock()
+        search.return_value.get_dict.side_effect = [
+            {"related_questions": [{"question": "Child?", "next_page_token": "child"}]},
+            {"related_questions": [{"question": "Leaf?", "snippet": "Leaf answer",
+                                     "link": "https://example.org/leaf", "next_page_token": "root"}]},
+        ]
+        self.assertEqual(expand_related_questions(response, search, "key", 5), 2)
+        provenance = response["related_questions"][-1]["nativqa_related_question"]
+        self.assertEqual(provenance["parent_question"], "Child?")
+        self.assertEqual(provenance["depth"], 2)
+        self.assertFalse(response["nativqa_related_questions"]["request_limit_reached"])
 
 
 if __name__ == "__main__":

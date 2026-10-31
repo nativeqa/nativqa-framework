@@ -24,6 +24,7 @@ def main(argv=None):
     parser.add_argument('--qa_extraction', choices=('legacy', 'hybrid', 'ai_overview'), default='legacy')
     parser.add_argument('--output_dir', type=Path)
     parser.add_argument('--ai_overview_max_requests', type=int, default=5)
+    parser.add_argument('--related_questions_max_requests', type=int, default=0)
     parser.add_argument('--env', type=Path, default=KEY_FILE)
     parser.add_argument('--input_file', type=Path, default=ROOT / 'experiments/ten_sample_queries/seeds.tsv')
     args = parser.parse_args(argv)
@@ -31,6 +32,10 @@ def main(argv=None):
         parser.error('Bing and Yahoo require --qa_extraction legacy')
     if args.ai_overview_max_requests < 0:
         parser.error('--ai_overview_max_requests must be nonnegative')
+    if args.related_questions_max_requests < 0:
+        parser.error('--related_questions_max_requests must be nonnegative')
+    if args.related_questions_max_requests and args.engine != 'google':
+        parser.error('--related_questions_max_requests requires --engine google')
     default_output = OUTPUT if args.engine == 'google' else OUTPUT.with_name(f'{OUTPUT.name}_{args.engine}')
     output = (ROOT / (args.output_dir or default_output)).resolve()
     if not output.is_relative_to(ROOT / 'results'):
@@ -59,6 +64,7 @@ def main(argv=None):
         "--output_dir", str(output), "--n_iter", "1",
         "--qa_extraction", args.qa_extraction,
         "--ai_overview_max_requests", str(args.ai_overview_max_requests),
+        "--related_questions_max_requests", str(args.related_questions_max_requests),
     ]
     # Honor the requested file even if the shell already has an API_KEY set.
     environment = dict(os.environ, API_KEY=key, PYTHONUNBUFFERED="1")

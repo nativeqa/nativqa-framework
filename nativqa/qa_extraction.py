@@ -63,18 +63,20 @@ def _overview_targets(response):
         yield response["search_parameters"]["q"], "seed_query", response["ai_overview"]
 
 
-def resolve_ai_overview_references(response, search_factory, api_key, max_requests=5):
+def resolve_ai_overview_references(response, search_factory, api_key, max_requests=5, cache=None):
     """Resolve deferred references immediately, before searching the next seed.
 
     Keep the original token/fields intact and attach the raw follow-up response
     under ``nativqa_ai_overview``. Failures are per overview, so classic answers
     and other questions from the same search are still retained. No automatic
-    retry is made with an expired token.
+    retry is made with an expired token. An optional per-seed cache lets related
+    question expansion batches share resolved tokens within the same budget.
     """
     if max_requests < 0:
         raise ValueError("max_requests must be nonnegative")
     requests_made = 0
-    cache = {}
+    if cache is None:
+        cache = {}
     for _, _, target in _overview_targets(response):
         overview = target.get("ai_overview")
         if not isinstance(overview, dict):
@@ -93,10 +95,12 @@ def resolve_ai_overview_references(response, search_factory, api_key, max_reques
             else:
                 requests_made += 1
                 try:
-                    fetched = search_factory({
+                    search = search_factory({
                         "engine": "google_ai_overview", "page_token": token,
                         "api_key": api_key,
-                    }, timeout=AI_OVERVIEW_TIMEOUT_SECONDS).get_dict()
+                    })
+                    search.timeout = AI_OVERVIEW_TIMEOUT_SECONDS
+                    fetched = search.get_dict()
                     state["response"] = _redact(fetched, api_key)
                     if fetched.get("error"):
                         state.update(status="error", error=_redact(fetched["error"], api_key))
@@ -230,4 +234,5 @@ def iter_ai_overview_candidates(response):
                 search_parameters=params,
                 search_metadata=response.get("search_metadata", {}),
                 ai_overview_search_metadata=state.get("response", {}).get("search_metadata", {}),
+                related_question_expansion=target.get("nativqa_related_question"),
             )

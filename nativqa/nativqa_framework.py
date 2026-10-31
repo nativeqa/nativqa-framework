@@ -16,6 +16,7 @@ from shutil import copyfile
 from . import __version__
 from .qa_extraction import (AI_OVERVIEW_TIMEOUT_SECONDS, QA_EXTRACTION_MODES, iter_ai_overview_candidates,
                             resolve_ai_overview_references, utc_now)
+from .related_questions import expand_related_questions, validate_related_questions
 
 from .utils import (read_seed_queries,
                     ensure_directory,
@@ -195,7 +196,8 @@ def image_scrape(engine, data, location, gl, summary_writer, failed_writer, mc=N
 
 
 def scrape(engine, data, location, gl, summary_writer, failed_writer, mc=None,
-           qa_extraction="legacy", ai_overview_max_requests=5):
+           qa_extraction="legacy", ai_overview_max_requests=5, related_questions_max_requests=0):
+    validate_related_questions(engine, 'text', related_questions_max_requests)
     search_params = {
         "engine": engine,
         "q": "",
@@ -209,26 +211,42 @@ def scrape(engine, data, location, gl, summary_writer, failed_writer, mc=None,
     if mc is not None:
         search_params['cr'] = mc
     collect_ai = engine == 'google' and qa_extraction != 'legacy'
-    if collect_ai:
-        # Cached Google searches may contain already-expired AI Overview tokens.
+    if collect_ai or related_questions_max_requests:
+        # Follow-up tokens need a fresh search response.
         search_params['no_cache'] = True
     for example in tqdm(data, desc="API request processing"):
         category, query = example[0], example[1]
         search_params['q'] = query.strip()
         try:
-            search = (GoogleSearch(search_params, timeout=AI_OVERVIEW_TIMEOUT_SECONDS)
-                      if collect_ai else GoogleSearch(search_params))
+            search = GoogleSearch(search_params)
+            if collect_ai or related_questions_max_requests:
+                search.timeout = AI_OVERVIEW_TIMEOUT_SECONDS
             response = search.get_dict()
             if response.get('error'):
                 raise ValueError(response['error'])
             # output_response.append(response)
             response['search_parameters']['category'] = category
+            overview_cache = {}
+            overview_requests = 0
+
+            def resolve_overviews(batch):
+                nonlocal overview_requests
+                overview_requests += resolve_ai_overview_references(
+                    batch, GoogleSearch, os.getenv('API_KEY'),
+                    ai_overview_max_requests - overview_requests, cache=overview_cache,
+                )
+
             if collect_ai:
                 response['nativqa_collection'] = {
                     'qa_extraction': qa_extraction, 'collected_at_utc': utc_now(),
                 }
-                resolve_ai_overview_references(
-                    response, GoogleSearch, os.getenv('API_KEY'), ai_overview_max_requests,
+                resolve_overviews(response)
+            if related_questions_max_requests:
+                expand_related_questions(
+                    response, GoogleSearch, os.getenv('API_KEY'), related_questions_max_requests,
+                    on_questions=(lambda questions: resolve_overviews({
+                        'search_parameters': response['search_parameters'], 'related_questions': questions,
+                    })) if collect_ai else None,
                 )
             resp = []
             if 'related_questions' in response:
@@ -386,7 +404,7 @@ def generate_output_files(working_dir, summary, qa_extraction="legacy"):
 
 
 def run_nativqa(engine, search_type, input_file, gl, location, multiple_country, result_dir, env, n_iter,
-               qa_extraction="legacy", ai_overview_max_requests=5):
+               qa_extraction="legacy", ai_overview_max_requests=5, related_questions_max_requests=0):
     accepted_input_file = ['csv', 'tsv']
     accepted_search_engine = ['google', 'yahoo', 'bing']
     if engine.lower() in accepted_search_engine:
@@ -394,6 +412,7 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
     else:
         logger.error('please specify search engine either `google`, `yahoo`, or `bing`')
         sys.exit(1)
+    validate_related_questions(engine, search_type, related_questions_max_requests)
     if qa_extraction not in QA_EXTRACTION_MODES:
         raise ValueError('qa_extraction must be legacy, hybrid, or ai_overview')
     if ai_overview_max_requests < 0:
@@ -447,6 +466,7 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
     input_text = Path(input_file).read_text(encoding='utf-8')
     extraction_config = {'qa_extraction': qa_extraction,
                          'ai_overview_max_requests': ai_overview_max_requests,
+                         'related_questions_max_requests': related_questions_max_requests,
                          'engine': engine, 'country_code': gl, 'location': location,
                          'multiple_countries': multiple_country,
                          'input_sha256': hashlib.sha256(input_text.encode('utf-8')).hexdigest()}
@@ -454,6 +474,9 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
     if cached_seed.exists() and cached_seed.read_text(encoding='utf-8') != input_text:
         raise ValueError('Seed input differs from this cached run; use a new --output_dir')
     stored_config = read_json_data(config_path) if os.path.exists(config_path) else {}
+    if (related_questions_max_requests and 'related_questions_max_requests' not in stored_config
+            and any(Path(result_dir).rglob('summary.jsonl'))):
+        raise ValueError('Cached responses have no related-question expansion settings; use a new --output_dir')
     if (cached_seed.exists() and stored_config.get('input_sha256') ==
             hashlib.sha256(cached_seed.read_bytes()).hexdigest()):
         # Upgrade raw-byte fingerprints without invalidating unchanged CRLF/LF inputs.
@@ -522,7 +545,7 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
                 # first try to scrape failed data, then try to scrape rest
                 if search_type == 'text':
                     scrape(engine, failed_data, location, gl, summary_writer, failed_writer, multiple_country,
-                           qa_extraction, ai_overview_max_requests)
+                           qa_extraction, ai_overview_max_requests, related_questions_max_requests)
                 elif search_type == 'video':
                     video_scrape(engine, failed_data, location, gl, summary_writer, failed_writer, multiple_country)
                 else:
@@ -531,7 +554,7 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
                 data = data[start_index:]
                 if search_type == 'text':
                     scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country,
-                           qa_extraction, ai_overview_max_requests)
+                           qa_extraction, ai_overview_max_requests, related_questions_max_requests)
                 elif search_type == 'video':
                     video_scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country)
                 else:
@@ -541,7 +564,7 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
                 # print("scrapping only failed data")
                 if search_type == 'text':
                     scrape(engine, failed_data, location, gl, summary_writer, failed_writer, multiple_country,
-                           qa_extraction, ai_overview_max_requests)
+                           qa_extraction, ai_overview_max_requests, related_questions_max_requests)
                 elif search_type == 'video':
                     video_scrape(engine, failed_data, location, gl, summary_writer, failed_writer, multiple_country)
                 else:
@@ -556,7 +579,7 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
                 data = data[len(summary_data):]
                 if search_type == 'text':
                     scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country,
-                           qa_extraction, ai_overview_max_requests)
+                           qa_extraction, ai_overview_max_requests, related_questions_max_requests)
                 elif search_type == 'video':
                     video_scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country)
                 else:
@@ -566,7 +589,7 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
                 # print("starting from input file")
                 if search_type == 'text':
                     scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country,
-                           qa_extraction, ai_overview_max_requests)
+                           qa_extraction, ai_overview_max_requests, related_questions_max_requests)
                 elif search_type == 'video':
                     video_scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country)
                 else:
@@ -720,6 +743,8 @@ def main():
                       default='legacy', help='Text QA extraction: legacy (default), hybrid, or ai_overview (Google only)')
     parser.add_option('--ai_overview_max_requests', type='int', default=5,
                       help='Maximum additional AI Overview requests per seed (default 5; 0 uses embedded content only)')
+    parser.add_option('--related_questions_max_requests', type='int', default=0,
+                      help='Google text only: maximum google_related_questions requests per seed (default 0; disabled)')
 
     options, args = parser.parse_args()
     engine = options.engine
@@ -733,7 +758,8 @@ def main():
     multiple_country = options.multiple_countries
     run_nativqa(engine, search_type, input_file, gl, location, multiple_country, result_dir, env, n_iter,
                qa_extraction=options.qa_extraction,
-               ai_overview_max_requests=options.ai_overview_max_requests)
+               ai_overview_max_requests=options.ai_overview_max_requests,
+               related_questions_max_requests=options.related_questions_max_requests)
 
 if __name__=="__main__":
     main()

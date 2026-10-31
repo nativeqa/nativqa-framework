@@ -149,6 +149,7 @@ The `topic` column is used as a high-level category. The `query` column is the n
 - `--n_iter`: Number of iterative search rounds
 - `--qa_extraction`: Text QA extraction mode: `legacy` (default), `hybrid`, or `ai_overview`. The last two require Google text search.
 - `--ai_overview_max_requests`: Maximum additional AI Overview requests per seed, default `5`; `0` extracts embedded content without follow-up requests.
+- `--related_questions_max_requests`: Maximum additional `google_related_questions` requests per seed, default `0` (disabled). A positive value requires Google text search.
 
 Legacy extraction remains available for Google, Bing, and Yahoo. Opt in to
 Google AI Overview extraction with `--qa_extraction hybrid` to collect classic
@@ -209,6 +210,31 @@ output directory. AI modes fetch fresh Google results and resolve deferred token
 before the next seed. The limit is **additional requests per seed**: ten seeds
 can consume ten initial searches plus up to fifty overview requests. Increasing
 `--n_iter` expands the query set and can increase API usage further.
+
+### Google Related Questions expansion
+
+```bash
+python3 -m nativqa \
+  --engine google --search_type text \
+  --input_file tests/data/test_query.csv \
+  --country_code qa --location "Doha, Qatar" \
+  --env envs/api_key.env \
+  --output_dir results/google_related_questions \
+  --related_questions_max_requests 3 \
+  --qa_extraction hybrid --ai_overview_max_requests 5 \
+  --n_iter 1
+```
+
+This optional expansion follows Google's `next_page_token` values through
+SerpApi's `google_related_questions` engine. Keep `--engine google`: the dedicated
+endpoint is a follow-up service, not a seed-query search engine. Bing, Yahoo,
+image, and video searches reject a positive expansion limit before any API call.
+All engines retain their existing behavior when the limit is `0`.
+
+Expanded snippet/list answers use the existing QA export; `hybrid` also resolves
+AI Overview answers from expanded questions. Expansion and AI Overview budgets
+are separate, each shared across a seed and its follow-ups. See
+[Related Questions expansion](docs/related_questions.md) for limits and provenance.
 
 ### Bing text search with legacy extraction
 

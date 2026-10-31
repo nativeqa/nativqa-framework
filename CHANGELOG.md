@@ -8,6 +8,11 @@ This project follows a Keep a Changelog style and uses Semantic Versioning (`MAJ
 
 ### Added
 
+- Optional Google text-only People also ask expansion through SerpApi's
+  `google_related_questions` endpoint, controlled by
+  `--related_questions_max_requests` (default `0`). Includes bounded token
+  traversal, follow-up provenance, shared AI Overview budgets, cache checks,
+  and early rejection for unsupported engines/search types.
 - Opt-in Google AI Overview QA extraction, including immediate resolution of
   deferred references, nested answer text, citation mappings, collection metadata,
   and separate unverified candidate JSONL exports. Legacy extraction remains the default.
@@ -34,6 +39,8 @@ This project follows a Keep a Changelog style and uses Semantic Versioning (`MAJ
 
 ### Fixed
 
+- Set SerpApi request timeouts on the client instance, matching the supported
+  `GoogleSearch` constructor in the installed Python SDK.
 - Read legacy `questions_and_answers` from its own response block.
 - Exclude TSV headers from the logged text QA row counts.
 - Remove Google HTML comment metadata from extracted overview answers while

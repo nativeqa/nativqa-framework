@@ -53,6 +53,12 @@ overview requests for one iteration. Later iterations can expand the query set.
 Use `--n_iter 1` for a bounded trial. A limit of `0` processes embedded overviews
 only. Legacy mode makes no overview requests.
 
+Google text searches can also opt into [Related Questions expansion](related_questions.md)
+with `--related_questions_max_requests`. Expanded questions share the same per-seed
+AI Overview budget with the initial questions and seed overview. Initial overview
+tokens are resolved before expansion; each new batch is resolved before fetching
+the next batch. Repeated overview tokens share a cache across these batches.
+
 Repeated tokens within a seed share one request. Empty, expired, failed, or
 budget-limited overviews retain their status in the raw output and do not suppress
 classic answers or other overviews. Expired tokens are not automatically retried.

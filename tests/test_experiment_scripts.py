@@ -96,6 +96,17 @@ class TestExperimentScripts(unittest.TestCase):
             self.assertEqual(raised.exception.code, 2)
             process.assert_not_called()
 
+    def test_runner_rejects_unsupported_or_negative_related_question_limits(self):
+        module = load_script('run_samples')
+        for arguments in (["--engine", "bing", "--related_questions_max_requests", "1"],
+                          ["--engine", "yahoo", "--related_questions_max_requests", "1"],
+                          ["--related_questions_max_requests", "-1"]):
+            with self.subTest(arguments=arguments), patch.object(module.subprocess, 'Popen') as process, \
+                 contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+                module.main(arguments)
+            self.assertEqual(raised.exception.code, 2)
+            process.assert_not_called()
+
     def test_importing_replay_does_not_run_the_pipeline(self):
         with patch('nativqa.nativqa_framework.run_nativqa') as run:
             load_script('replay_updated_qa')
