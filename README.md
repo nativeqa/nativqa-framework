@@ -55,10 +55,17 @@ The pip package requires Python 3.9 or newer and a SerpAPI key for search reques
    git clone https://github.com/nativeqa/nativqa-framework/
    cd nativqa-framework
    ```
-2. Install the requirements:
+2. Create a virtual environment and install the core package:
    ```bash
-   python3 -m pip install -r requirements.txt
+   python3 -m venv .venv
+   source .venv/bin/activate
+   python -m pip install -e .
+   python -m pip check
    ```
+   On Windows, activate with `.venv\Scripts\Activate.ps1` in PowerShell.
+   Install `python -m pip install -r requirements.txt` when using repository
+   demos and supporting utilities. AI Overview options require a source checkout
+   containing this feature; older PyPI releases do not provide these flags.
 3. Add your SerpAPI key to `envs/api_key.env`:
    ```bash
    mkdir -p envs
@@ -73,8 +80,12 @@ The pip package requires Python 3.9 or newer and a SerpAPI key for search reques
      --country_code qa \
      --location "Doha, Qatar" \
      --env envs/api_key.env \
-     --n_iter 3
+     --output_dir results/google_legacy \
+     --qa_extraction legacy \
+     --n_iter 1
    ```
+   Legacy Google searches can return no QA pairs when related questions contain
+   only AI Overview references. Use the opt-in examples below to resolve them.
 
 ### Option 2: Install from PyPI
 
@@ -108,6 +119,7 @@ version with `nativqa --version` (available from version 0.1.3).
      --country_code us \
      --location "New York, United States" \
      --env envs/api_key.env \
+     --output_dir results/new_york_legacy \
      --n_iter 1
    ```
 
@@ -135,10 +147,23 @@ The `topic` column is used as a high-level category. The `query` column is the n
 - `--env`: Path to the env file containing `API_KEY`
 - `--output_dir`: Optional output directory. Defaults to `./results/`
 - `--n_iter`: Number of iterative search rounds
+- `--qa_extraction`: Text QA extraction mode: `legacy` (default), `hybrid`, or `ai_overview`. The last two require Google text search.
+- `--ai_overview_max_requests`: Maximum additional AI Overview requests per seed, default `5`; `0` extracts embedded content without follow-up requests.
+
+Legacy extraction remains available for Google, Bing, and Yahoo. Opt in to
+Google AI Overview extraction with `--qa_extraction hybrid` to collect classic
+answers and generated answer candidates, or `--qa_extraction ai_overview` for
+generated candidates only. AI-derived rows are labeled `ai_overview`; their
+citations and unverified status are saved in a separate candidate JSONL file.
+Use a new output directory when changing extraction settings.
+
+AI Overview text should undergo source-based review before becoming benchmark
+gold answers. See [AI Overview QA collection](docs/ai_overview_qa.md) for usage,
+request costs, provenance, and benchmark recommendations.
 
 ## Common Examples
 
-### Text search
+### Google text search with legacy extraction
 
 ```bash
 python3 -m nativqa \
@@ -148,8 +173,72 @@ python3 -m nativqa \
   --country_code qa \
   --location "Doha, Qatar" \
   --env envs/api_key.env \
-  --n_iter 3
+  --output_dir results/google_legacy \
+  --qa_extraction legacy \
+  --n_iter 1
 ```
+
+### Google text search with legacy and AI Overview candidates
+
+```bash
+python3 -m nativqa \
+  --engine google --search_type text \
+  --input_file data/test_query.csv \
+  --country_code qa --location "Doha, Qatar" \
+  --env envs/api_key.env \
+  --output_dir results/google_hybrid \
+  --qa_extraction hybrid --ai_overview_max_requests 5 \
+  --n_iter 1
+```
+
+### Google AI Overview candidates only
+
+```bash
+python3 -m nativqa \
+  --engine google --search_type text \
+  --input_file data/test_query.csv \
+  --country_code qa --location "Doha, Qatar" \
+  --env envs/api_key.env \
+  --output_dir results/google_ai_overview \
+  --qa_extraction ai_overview --ai_overview_max_requests 5 \
+  --n_iter 1
+```
+
+For embedded content only, use `--ai_overview_max_requests 0` and a separate
+output directory. AI modes fetch fresh Google results and resolve deferred tokens
+before the next seed. The limit is **additional requests per seed**: ten seeds
+can consume ten initial searches plus up to fifty overview requests. Increasing
+`--n_iter` expands the query set and can increase API usage further.
+
+### Bing text search with legacy extraction
+
+```bash
+python3 -m nativqa \
+  --engine bing --search_type text \
+  --input_file data/test_query.csv \
+  --country_code qa --location "Doha, Qatar" \
+  --env envs/api_key.env \
+  --output_dir results/bing_legacy \
+  --qa_extraction legacy --n_iter 1
+```
+
+### Yahoo text search with legacy extraction
+
+```bash
+python3 -m nativqa \
+  --engine yahoo --search_type text \
+  --input_file data/test_query.csv \
+  --country_code qa --location "Doha, Qatar" \
+  --env envs/api_key.env \
+  --output_dir results/yahoo_legacy \
+  --qa_extraction legacy --n_iter 1
+```
+
+Bing and Yahoo retain the existing related-question and `questions_and_answers`
+export. An API response can succeed while providing neither block, resulting in
+an empty QA dataset. Organic snippets and answer boxes are not automatically
+promoted to QA pairs. Each engine interprets localization parameters according
+to its API; `--country_code` is Google's `gl` parameter.
 
 ### Image search
 
@@ -161,6 +250,7 @@ python3 -m nativqa \
   --country_code us \
   --location "New York, United States" \
   --env envs/api_key.env \
+  --output_dir results/google_images \
   --n_iter 1
 ```
 
@@ -174,6 +264,7 @@ python3 -m nativqa \
   --country_code us \
   --location "New York, United States" \
   --env envs/api_key.env \
+  --output_dir results/google_videos \
   --n_iter 1
 ```
 
@@ -195,6 +286,126 @@ Inside that directory:
   - Per-iteration raw and processed outputs such as `summary.jsonl`, `original_response.json`, and related-search files
 - `completed_queries.txt`
   - Queries already processed across iterations
+- `qa_extraction_config.json`
+  - Extraction/search settings and input fingerprint used to protect cached runs
+
+AI modes additionally write `dataset/<input_name>.ai_overview_candidates.jsonl`
+and per-iteration `ai_overview_candidates.jsonl`. Generated TSV rows are labeled
+`question_type=ai_overview`. Candidate JSONL retains citations, source URLs,
+collection metadata, `verification_status=unverified`, and `gold_eligible=false`.
+Use a new output directory when changing the seeds, engine, location, or extraction
+settings. Keep the JSONL provenance when using the TSV for benchmark construction.
+
+## Ten query experiments
+
+Run these commands from the repository root after the source installation above.
+The committed `experiments/ten_sample_queries/seeds.tsv` contains the ten English
+queries selected with random seed `42` from a 2,136-row source TSV. The selection
+manifest records its SHA-256 and source line numbers; the full source corpus is
+an external input and is not included in the repository.
+
+To regenerate the selection from your local source file:
+
+```bash
+python3 experiments/ten_sample_queries/prepare_samples.py \
+  --source ../queries/en_synthetic_queries_filtered.tsv
+```
+
+The following credential-redacting runner uses the committed seeds, one iteration,
+and separate output directories. Relative paths are resolved from the checkout.
+The env file must define `API_KEY`; use `--env ../envs/api_key.txt` instead when
+using the original workspace credential file.
+
+```bash
+# Google legacy
+python3 experiments/ten_sample_queries/run_samples.py \
+  --engine google --qa_extraction legacy \
+  --env envs/api_key.env --output_dir results/ten_sample_queries
+
+# Google hybrid
+python3 experiments/ten_sample_queries/run_samples.py \
+  --engine google --qa_extraction hybrid --ai_overview_max_requests 5 \
+  --env envs/api_key.env --output_dir results/qa_extract_updated
+
+# Bing legacy
+python3 experiments/ten_sample_queries/run_samples.py \
+  --engine bing --qa_extraction legacy \
+  --env envs/api_key.env --output_dir results/ten_sample_queries_bing
+
+# Yahoo legacy
+python3 experiments/ten_sample_queries/run_samples.py \
+  --engine yahoo --qa_extraction legacy \
+  --env envs/api_key.env --output_dir results/ten_sample_queries_yahoo
+```
+
+After the hybrid run, replay its cached responses with API calls blocked and
+validate/export question–answer snippets:
+
+```bash
+python3 experiments/ten_sample_queries/replay_updated_qa.py
+python3 experiments/ten_sample_queries/summarize_updated_qa.py
+```
+
+These scripts also preserve the original captured-run audits:
+
+```bash
+# Original Google legacy capture: exits 1 when the empty QA export fails validation.
+python3 experiments/ten_sample_queries/summarize_results.py
+
+# Original Bing capture: checks manually reviewed excerpts against saved responses.
+python3 experiments/ten_sample_queries_bing/summarize_results.py
+```
+
+The two original-capture audit scripts use reviewed result positions/excerpts;
+new live search results may differ and require review of those selections. Saved
+responses and credentials stay outside version control. The AI Overview summary
+reports the current saved run's counts and validation results.
+
+For complete command sequences, including environment checks and logs:
+
+```bash
+bash experiments/ten_sample_queries/commands.sh
+bash experiments/ten_sample_queries/commands_ai_overview.sh
+bash experiments/ten_sample_queries_bing/commands.sh
+```
+
+The shell scripts locate the checkout independently of the launch directory.
+They use `NATIVQA_PYTHON` when set, the original sibling `.venv-nativqa` when
+available, or `python3` from the active environment. They reuse committed seeds
+when the original source corpus is unavailable.
+
+## Testing and package validation
+
+The core and experiment regression tests run offline and need no API key:
+
+```bash
+python3 -m unittest tests.test_nativqa tests.test_experiment_scripts -v
+python3 -m pip check
+python3 -m nativqa --help
+python3 -m nativqa --version
+bash -n experiments/ten_sample_queries/commands.sh
+bash -n experiments/ten_sample_queries/commands_ai_overview.sh
+bash -n experiments/ten_sample_queries_bing/commands.sh
+```
+
+Build and check both distributions before release:
+
+```bash
+python3 -m pip install build twine
+python3 -m build
+python3 -m twine check --strict dist/*
+```
+
+See [PACKAGING.md](PACKAGING.md) for clean wheel/source installation checks and
+the supported Python/OS matrix. Python 3.9 CI uses Ubuntu 24.04 because the
+Ubuntu 26.04 image has no Python 3.9 runtime; newer Python jobs use the latest
+Ubuntu image. Optional image/video utility tests use separate
+dependencies:
+
+```bash
+python3 -m pip install -r requirements-video.txt
+python3 -m unittest tests.test_generate_visually_grounded_qa tests.test_generate_video_grounded_qa_gemini
+```
 
 ## Included Utilities
 
@@ -241,9 +452,13 @@ To filter answers by source reliability:
 
 ```bash
 python3 scripts/check_domain_reliability.py \
-  --input_file <dataset_directory>/input_filename.tsv \
-  --output_file <output_directory>/output_filename.tsv
+  --input_file results/google_legacy/text/test_query/dataset/test_query.tsv \
+  --output_file results/google_legacy/text/test_query/dataset/test_query.reliable.tsv
 ```
+
+Use domain filtering as an aid for legacy source review. Generated answers need
+claim-level checks against cited evidence; a domain label alone does not verify
+an AI Overview answer.
 
 ### LLM-based annotation
 

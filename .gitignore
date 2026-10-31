@@ -2,10 +2,12 @@
 results
 data/*
 nativqa/__pycache__/
-*/__pycache__/
+__pycache__/
+*.py[cod]
 envs
 *.env
 build/
 dist/
 *.egg-info/
+.venv/
 seed_query_collector/flask_session/

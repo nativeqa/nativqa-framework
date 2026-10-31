@@ -32,6 +32,9 @@ The GitHub Actions workflow builds both distributions, checks README/metadata,
 checks current and minimum runtime dependencies, and tests installations outside
 the source checkout. It uploads build artifacts but does not publish to PyPI.
 Tests mock SerpAPI; no API credentials or billable requests are needed.
+Python 3.9 current/minimum dependency jobs run on Ubuntu 24.04, whose runtime
+manifest includes Python 3.9. Newer Python jobs use `ubuntu-latest`; macOS and
+Windows use Python 3.13.
 
 ## Publish
 
