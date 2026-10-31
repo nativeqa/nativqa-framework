@@ -8,6 +8,12 @@ This project follows a Keep a Changelog style and uses Semantic Versioning (`MAJ
 
 ### Added
 
+- Opt-in Google AI Overview QA extraction, including immediate resolution of
+  deferred references, nested answer text, citation mappings, collection metadata,
+  and separate unverified candidate JSONL exports. Legacy extraction remains the default.
+- `--qa_extraction` and `--ai_overview_max_requests` CLI options, with offline
+  regression tests for Google, Bing, Yahoo, failures, request limits, and cached runs.
+
 - Publish the documented visual validation, image/video QA generation, annotation
   summary, and manual review scripts with setup guides and offline generator tests.
 
@@ -25,6 +31,15 @@ This project follows a Keep a Changelog style and uses Semantic Versioning (`MAJ
   - table of contents
   - refined quick start and output descriptions
   - demo, roadmap, and contributing sections
+
+### Fixed
+
+- Read legacy `questions_and_answers` from its own response block.
+- Exclude TSV headers from the logged text QA row counts.
+- Remove Google HTML comment metadata from extracted overview answers while
+  preserving raw responses and citation mappings.
+- Protect cached collections against changed seed inputs, engines, and locales;
+  make experiment entry points independent of the caller's working directory.
 
 ## [0.1.3] - 2026-09-22
 

@@ -80,6 +80,10 @@ jobs:
         run: python -m pip install -r requirements-video.txt
       - name: Test visual and video QA utilities without API calls
         run: |
+          python -m unittest tests.test_experiment_scripts
+          bash -n experiments/ten_sample_queries/commands.sh
+          bash -n experiments/ten_sample_queries/commands_ai_overview.sh
+          bash -n experiments/ten_sample_queries_bing/commands.sh
           python -m unittest tests.test_generate_visually_grounded_qa tests.test_generate_video_grounded_qa_gemini
           python scripts/validate_visual_qa_images.py --help
           python scripts/generate_visually_grounded_qa.py --help

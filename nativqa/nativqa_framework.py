@@ -14,6 +14,8 @@ from urllib.parse import parse_qs
 from serpapi import GoogleSearch
 from shutil import copyfile
 from . import __version__
+from .qa_extraction import (AI_OVERVIEW_TIMEOUT_SECONDS, QA_EXTRACTION_MODES, iter_ai_overview_candidates,
+                            resolve_ai_overview_references, utc_now)
 
 from .utils import (read_seed_queries,
                     ensure_directory,
@@ -192,7 +194,8 @@ def image_scrape(engine, data, location, gl, summary_writer, failed_writer, mc=N
             failed_writer.write(f"{json.dumps(entry, ensure_ascii=False)}\n")
 
 
-def scrape(engine, data, location, gl, summary_writer, failed_writer, mc=None):
+def scrape(engine, data, location, gl, summary_writer, failed_writer, mc=None,
+           qa_extraction="legacy", ai_overview_max_requests=5):
     search_params = {
         "engine": engine,
         "q": "",
@@ -205,17 +208,33 @@ def scrape(engine, data, location, gl, summary_writer, failed_writer, mc=None):
     # output_response = []
     if mc is not None:
         search_params['cr'] = mc
+    collect_ai = engine == 'google' and qa_extraction != 'legacy'
+    if collect_ai:
+        # Cached Google searches may contain already-expired AI Overview tokens.
+        search_params['no_cache'] = True
     for example in tqdm(data, desc="API request processing"):
         category, query = example[0], example[1]
         search_params['q'] = query.strip()
         try:
-            search = GoogleSearch(search_params)
+            search = (GoogleSearch(search_params, timeout=AI_OVERVIEW_TIMEOUT_SECONDS)
+                      if collect_ai else GoogleSearch(search_params))
             response = search.get_dict()
+            if response.get('error'):
+                raise ValueError(response['error'])
             # output_response.append(response)
             response['search_parameters']['category'] = category
+            if collect_ai:
+                response['nativqa_collection'] = {
+                    'qa_extraction': qa_extraction, 'collected_at_utc': utc_now(),
+                }
+                resolve_ai_overview_references(
+                    response, GoogleSearch, os.getenv('API_KEY'), ai_overview_max_requests,
+                )
             resp = []
             if 'related_questions' in response:
-                for entry in response['related_questions']:
+                for entry in response['related_questions'] or []:
+                    if not isinstance(entry, dict) or not isinstance(entry.get('question'), str):
+                        continue
                     hash_str = response['search_parameters']['q'] + " " + entry['question']
                     hash_id = hashlib.md5(hash_str.encode())
                     entry['data_id'] = hash_id.hexdigest()
@@ -278,7 +297,7 @@ def gen_img_vid_output_files(working_dir, summary, search_type="image"):
     write_file(out_file, img_result)
 
 
-def generate_output_files(working_dir, summary):
+def generate_output_files(working_dir, summary, qa_extraction="legacy"):
     output_data = read_summary_data(summary)
     out_file = os.path.join(working_dir, 'original_response.json')
     logger.info(f'writing response to: {out_file}...')
@@ -289,6 +308,7 @@ def generate_output_files(working_dir, summary):
     rquestion_resp = []
     qa_response = []
     rsearch_resp = [['category', 'seed_query', 'related_query']]
+    ai_candidates = []
 
     for results in output_data:
         null_entry = True
@@ -299,7 +319,9 @@ def generate_output_files(working_dir, summary):
                     rsearch_resp.append([category, results['search_parameters']["q"], relq['query']])
         if 'related_questions' in results:
             null_entry = False
-            for entry in results['related_questions']:
+            for entry in results['related_questions'] if qa_extraction != 'ai_overview' else []:
+                if entry.get('type') == 'ai_overview':
+                    continue
                 ans = ''
                 if 'snippet' in entry:
                     ans = entry['snippet']
@@ -312,7 +334,7 @@ def generate_output_files(working_dir, summary):
             rquestion_resp.append(rq)
         if 'questions_and_answers' in results:
             null_entry = False
-            for entry in results['related_questions']:
+            for entry in results['questions_and_answers'] if qa_extraction != 'ai_overview' else []:
                 # print(entry)
                 if 'answer' in entry:
                     rqa_resp.append(
@@ -321,6 +343,15 @@ def generate_output_files(working_dir, summary):
             rq = {'search_parameters': results['search_parameters'],
                   'questions_and_answers': results['questions_and_answers']}
             qa_response.append(rq)
+        if qa_extraction != 'legacy':
+            for candidate in iter_ai_overview_candidates(results):
+                null_entry = False
+                ai_candidates.append(candidate)
+                rqa_resp.append([
+                    candidate['data_id'], category, candidate['input_query'],
+                    candidate['question'], candidate['answer'], 'ai_overview',
+                    '\n'.join(candidate['source_urls']),
+                ])
         if null_entry:
             if 'search_parameters' in results:
                 rqa_resp.append([None, category, results['search_parameters']["q"], 'Not Available', 'NA', 'NA', 'NA'])
@@ -348,9 +379,14 @@ def generate_output_files(working_dir, summary):
     out_file = os.path.join(working_dir, 'related_search.tsv')
     logger.info(f'writing related search to: {out_file}...')
     write_csv_file(out_file, rsearch_resp)
+    if qa_extraction != 'legacy':
+        with open(os.path.join(working_dir, 'ai_overview_candidates.jsonl'), 'w', encoding='utf-8') as handle:
+            for candidate in ai_candidates:
+                handle.write(json.dumps(candidate, ensure_ascii=False) + '\n')
 
 
-def run_nativqa(engine, search_type, input_file, gl, location, multiple_country, result_dir, env, n_iter):
+def run_nativqa(engine, search_type, input_file, gl, location, multiple_country, result_dir, env, n_iter,
+               qa_extraction="legacy", ai_overview_max_requests=5):
     accepted_input_file = ['csv', 'tsv']
     accepted_search_engine = ['google', 'yahoo', 'bing']
     if engine.lower() in accepted_search_engine:
@@ -358,6 +394,12 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
     else:
         logger.error('please specify search engine either `google`, `yahoo`, or `bing`')
         sys.exit(1)
+    if qa_extraction not in QA_EXTRACTION_MODES:
+        raise ValueError('qa_extraction must be legacy, hybrid, or ai_overview')
+    if ai_overview_max_requests < 0:
+        raise ValueError('ai_overview_max_requests must be nonnegative')
+    if qa_extraction != 'legacy' and (engine != 'google' or search_type.lower() != 'text'):
+        raise ValueError('AI Overview extraction requires Google text search; use legacy for other engines/modes')
     if search_type.lower() not in ['text', 'image', 'video']:
         logger.error('Invalid search type. Supported search types are [image, text, or video]')
         sys.exit(1)
@@ -401,6 +443,37 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
     else:
         result_dir = os.path.join(result_dir, search_type, folder_name)
     ensure_directory(result_dir)
+    config_path = os.path.join(result_dir, 'qa_extraction_config.json')
+    input_text = Path(input_file).read_text(encoding='utf-8')
+    extraction_config = {'qa_extraction': qa_extraction,
+                         'ai_overview_max_requests': ai_overview_max_requests,
+                         'engine': engine, 'country_code': gl, 'location': location,
+                         'multiple_countries': multiple_country,
+                         'input_sha256': hashlib.sha256(input_text.encode('utf-8')).hexdigest()}
+    cached_seed = Path(result_dir) / 'iteration_1' / os.path.basename(input_file)
+    if cached_seed.exists() and cached_seed.read_text(encoding='utf-8') != input_text:
+        raise ValueError('Seed input differs from this cached run; use a new --output_dir')
+    stored_config = read_json_data(config_path) if os.path.exists(config_path) else {}
+    if (cached_seed.exists() and stored_config.get('input_sha256') ==
+            hashlib.sha256(cached_seed.read_bytes()).hexdigest()):
+        # Upgrade raw-byte fingerprints without invalidating unchanged CRLF/LF inputs.
+        stored_config['input_sha256'] = extraction_config['input_sha256']
+    if os.path.exists(config_path):
+        if any(stored_config[key] != value for key, value in extraction_config.items()
+               if key in stored_config):
+            raise ValueError('Extraction settings differ from this cached run; use a new --output_dir')
+    elif qa_extraction != 'legacy' and any(Path(result_dir).rglob('summary.jsonl')):
+        raise ValueError('Cached legacy responses may contain expired tokens; use a new --output_dir')
+    # Older runs recorded only extraction mode/limit. Check their saved search
+    # parameters before upgrading the cache metadata with input/locale settings.
+    if stored_config and 'engine' not in stored_config:
+        for summary_path in Path(result_dir).glob('iteration_*/output/summary.jsonl'):
+            for response in read_summary_data(summary_path):
+                params = response.get('search_parameters', {})
+                expected = {'engine': engine, 'gl': gl, 'location_requested': location, 'cr': multiple_country}
+                if any(params[key] != value for key, value in expected.items() if key in params):
+                    raise ValueError('Search settings differ from this cached run; use a new --output_dir')
+    write_file(config_path, extraction_config)
 
     working_dir = os.path.join(result_dir, 'iteration_1')
     ensure_directory(working_dir)
@@ -448,7 +521,8 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
                 # print("failed, continuing from failed first followed by summary")
                 # first try to scrape failed data, then try to scrape rest
                 if search_type == 'text':
-                    scrape(engine, failed_data, location, gl, summary_writer, failed_writer, multiple_country)
+                    scrape(engine, failed_data, location, gl, summary_writer, failed_writer, multiple_country,
+                           qa_extraction, ai_overview_max_requests)
                 elif search_type == 'video':
                     video_scrape(engine, failed_data, location, gl, summary_writer, failed_writer, multiple_country)
                 else:
@@ -456,7 +530,8 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
                 start_index = len(failed_data) + len(summary_data)
                 data = data[start_index:]
                 if search_type == 'text':
-                    scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country)
+                    scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country,
+                           qa_extraction, ai_overview_max_requests)
                 elif search_type == 'video':
                     video_scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country)
                 else:
@@ -465,7 +540,8 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
                 # scrape only failed data
                 # print("scrapping only failed data")
                 if search_type == 'text':
-                    scrape(engine, failed_data, location, gl, summary_writer, failed_writer, multiple_country)
+                    scrape(engine, failed_data, location, gl, summary_writer, failed_writer, multiple_country,
+                           qa_extraction, ai_overview_max_requests)
                 elif search_type == 'video':
                     video_scrape(engine, failed_data, location, gl, summary_writer, failed_writer, multiple_country)
                 else:
@@ -479,7 +555,8 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
                 logger.info(f'Skipping total data: {len(summary_data)}')
                 data = data[len(summary_data):]
                 if search_type == 'text':
-                    scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country)
+                    scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country,
+                           qa_extraction, ai_overview_max_requests)
                 elif search_type == 'video':
                     video_scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country)
                 else:
@@ -488,7 +565,8 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
                 # starting from input file
                 # print("starting from input file")
                 if search_type == 'text':
-                    scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country)
+                    scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country,
+                           qa_extraction, ai_overview_max_requests)
                 elif search_type == 'video':
                     video_scrape(engine, data, location, gl, summary_writer, failed_writer, multiple_country)
                 else:
@@ -496,7 +574,7 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
         summary_writer.close()
         failed_writer.close()
         if search_type == 'text':
-            generate_output_files(output_dir, summary)
+            generate_output_files(output_dir, summary, qa_extraction)
             completed_query_file = extract_completed_queries(result_dir)
         else:
             gen_img_vid_output_files(output_dir, summary, search_type)
@@ -555,7 +633,8 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
         for row in output:
             flag = False
             for data in filtered_output:
-                if row[3].strip() == data[3].strip() and row[4].strip() == data[4].strip():
+                if (row[3].strip() == data[3].strip() and row[4].strip() == data[4].strip()
+                        and (qa_extraction == 'legacy' or row[5] == data[5])):
                     flag = True
                 if row[3] == 'Not Available' or row[4] == 'NA':
                     flag = True
@@ -584,12 +663,28 @@ def run_nativqa(engine, search_type, input_file, gl, location, multiple_country,
     if search_type == 'text':
         dataset_file = os.path.join(dataset_dir, f'{folder_name}.tsv')
         duplicate_file = os.path.join(dataset_dir, f'{folder_name}.duplicate_qa.tsv')
-        logger.info(f'Total unique data collected: {len(filtered_output)}')
-        logger.info(f'Total duplicate data collected: {len(duplicate)}')
+        logger.info(f'Total unique data collected: {len(filtered_output) - 1}')
+        logger.info(f'Total duplicate data collected: {len(duplicate) - 1}')
         logger.info(f'writing output to: {dataset_file}')
         write_csv_file(dataset_file, filtered_output)
         logger.info(f'writing duplicate to: {duplicate_file}')
         write_csv_file(duplicate_file, duplicate)
+        if qa_extraction != 'legacy':
+            candidates = []
+            seen = set()
+            exported_pairs = {(row[0], row[4]) for row in filtered_output[1:]
+                              if row[5] == 'ai_overview'}
+            for path in sorted(Path(result_dir).glob('iteration_*/output/ai_overview_candidates.jsonl')):
+                for line in path.read_text(encoding='utf-8').splitlines():
+                    candidate = json.loads(line)
+                    identity = (candidate['data_id'], candidate['answer'])
+                    if identity in exported_pairs and identity not in seen:
+                        seen.add(identity)
+                        candidates.append(candidate)
+            candidate_file = os.path.join(dataset_dir, f'{folder_name}.ai_overview_candidates.jsonl')
+            with open(candidate_file, 'w', encoding='utf-8') as handle:
+                for candidate in candidates:
+                    handle.write(json.dumps(candidate, ensure_ascii=False) + '\n')
     else:
         dataset_file = os.path.join(dataset_dir, f'{folder_name}.json')
         duplicate_file = os.path.join(dataset_dir, f'{folder_name}.duplicate_qa.json')
@@ -621,6 +716,10 @@ def main():
                       help='API key file')
     parser.add_option('-n', '--n_iter', action='store', dest='n_iter', default=3, type="int",
                       help='Number of iteration for data scrape')
+    parser.add_option('--qa_extraction', type='choice', choices=QA_EXTRACTION_MODES,
+                      default='legacy', help='Text QA extraction: legacy (default), hybrid, or ai_overview (Google only)')
+    parser.add_option('--ai_overview_max_requests', type='int', default=5,
+                      help='Maximum additional AI Overview requests per seed (default 5; 0 uses embedded content only)')
 
     options, args = parser.parse_args()
     engine = options.engine
@@ -632,7 +731,9 @@ def main():
     result_dir = options.output_dir
     n_iter = options.n_iter
     multiple_country = options.multiple_countries
-    run_nativqa(engine, search_type, input_file, gl, location, multiple_country, result_dir, env, n_iter)
+    run_nativqa(engine, search_type, input_file, gl, location, multiple_country, result_dir, env, n_iter,
+               qa_extraction=options.qa_extraction,
+               ai_overview_max_requests=options.ai_overview_max_requests)
 
 if __name__=="__main__":
     main()

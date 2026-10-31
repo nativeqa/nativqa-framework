@@ -1,0 +1,80 @@
+{
+  "source": "queries/en_synthetic_queries_filtered.tsv",
+  "source_sha256": "f5802c3bc41efd31ec2bc523980fd24118508ea449e8527831e9ddcfdf10d5ac",
+  "source_rows": 2136,
+  "unique_queries": 2136,
+  "random_seed": 42,
+  "sample_size": 10,
+  "samples": [
+    {
+      "source_line": 104,
+      "split": "train",
+      "category": "animals",
+      "source": "synthetic",
+      "query": "how long do giraffes live in the wild"
+    },
+    {
+      "source_line": 132,
+      "split": "train",
+      "category": "animals",
+      "source": "synthetic",
+      "query": "natural remedies for pet skin allergies"
+    },
+    {
+      "source_line": 358,
+      "split": "train",
+      "category": "food_drinks",
+      "source": "synthetic",
+      "query": "is brown sugar healthier than white sugar"
+    },
+    {
+      "source_line": 421,
+      "split": "train",
+      "category": "food_drinks",
+      "source": "synthetic",
+      "query": "calories in a single samosa"
+    },
+    {
+      "source_line": 458,
+      "split": "train",
+      "category": "food_drinks",
+      "source": "synthetic",
+      "query": "what food pairs well with cardamom coffee"
+    },
+    {
+      "source_line": 573,
+      "split": "train",
+      "category": "food_drinks",
+      "source": "synthetic",
+      "query": "what is a balanced diet for weight loss"
+    },
+    {
+      "source_line": 916,
+      "split": "train",
+      "category": "immigration",
+      "source": "synthetic",
+      "query": "what is the cost of a work permit for malysia from bangladesh"
+    },
+    {
+      "source_line": 1005,
+      "split": "train",
+      "category": "language",
+      "source": "synthetic",
+      "query": "how to write a formal email in english"
+    },
+    {
+      "source_line": 1128,
+      "split": "train",
+      "category": "names",
+      "source": "synthetic",
+      "query": "names of cities in bangladesh starting with c"
+    },
+    {
+      "source_line": 1730,
+      "split": "train",
+      "category": "weather",
+      "source": "synthetic",
+      "query": "what are common misconceptions about monsoon season?"
+    }
+  ]
+}
