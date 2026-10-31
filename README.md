@@ -397,7 +397,9 @@ python3 -m twine check --strict dist/*
 ```
 
 See [PACKAGING.md](PACKAGING.md) for clean wheel/source installation checks and
-the supported Python/OS matrix. Optional image/video utility tests use separate
+the supported Python/OS matrix. Python 3.9 CI uses Ubuntu 24.04 because the
+Ubuntu 26.04 image has no Python 3.9 runtime; newer Python jobs use the latest
+Ubuntu image. Optional image/video utility tests use separate
 dependencies:
 
 ```bash

@@ -40,6 +40,7 @@ This project follows a Keep a Changelog style and uses Semantic Versioning (`MAJ
   preserving raw responses and citation mappings.
 - Protect cached collections against changed seed inputs, engines, and locales;
   make experiment entry points independent of the caller's working directory.
+- Pin Python 3.9 CI jobs to Ubuntu 24.04 to avoid unavailable runtimes on Ubuntu 26.04.
 
 ## [0.1.3] - 2026-09-22
 

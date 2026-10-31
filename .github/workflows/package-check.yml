@@ -14,10 +14,14 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         dependencies: [current]
         include:
-          - os: ubuntu-latest
+          # Python 3.9 binaries are unavailable on Ubuntu 26.04 (ubuntu-latest).
+          - os: ubuntu-24.04
+            python: "3.9"
+            dependencies: current
+          - os: ubuntu-24.04
             python: "3.9"
             dependencies: minimum
           - os: windows-latest
